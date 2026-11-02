@@ -29,6 +29,7 @@ h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.01em}
 .muted{color:var(--muted)}
 .small{font-size:13px}
 button,input,select,textarea{font:inherit;color:inherit}
+input,select,textarea{font-size:16px}
 button{cursor:pointer}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
@@ -626,21 +627,30 @@ let rec=null, listening=false, baseText='';
 function micNote(msg){ const n=$('#micnote'); n.textContent=msg; n.hidden=!msg; }
 const KEYBOARD_HINT='Здесь браузер не даёт доступ к микрофону. Нажмите значок микрофона на клавиатуре телефона и надиктуйте фразу в поле, потом «Разобрать».';
 async function startNativeVoice(){
-  const ta=$('#say'), mic=$('#mic');
-  if(listening) return;
-  listening=true; micNote(''); mic.classList.add('on');
+  const NB=window.NativeBudget, ta=$('#say'), mic=$('#mic');
+  const ios = NB.platform==='ios';
+  if(listening){ if(ios) NB.stopListening(); return; }
+  listening=true; mic.classList.add('on'); mic.setAttribute('aria-label','Остановить запись');
+  micNote(ios?'Говорите… Я остановлюсь сама после паузы, или нажмите микрофон ещё раз.':'');
+  const base=ta.value.trim();
   try{
-    const text=await window.NativeBudget.listen();
-    if(text){ const base=ta.value.trim(); ta.value=(base?base+' ':'')+text; doParse(); }
+    const text = ios
+      ? await NB.listenStream(t=>{ ta.value=(base?base+' ':'')+t; })
+      : await NB.listen();
+    if(text){ ta.value=(base?base+' ':'')+text; micNote(''); doParse(); }
     else micNote('Ничего не услышала. Нажмите микрофон и скажите фразу ещё раз.');
   }catch(e){
-    const code=e&&e.code, msg=String(e&&e.message||'');
-    if(code==='denied') micNote('Нет доступа к микрофону. Разрешите его приложению «Бюджет» в настройках телефона: Приложения → Бюджет → Разрешения → Микрофон.');
-    else if(code==='unavailable') micNote('На телефоне нет службы распознавания речи. Установите или обновите приложение Google из Play Маркета.');
+    const code=e&&e.code, msg=String(e&&e.message||e||'');
+    if(code==='denied'||/denied|permission/i.test(msg)) micNote(ios
+      ? 'Нет доступа к микрофону или распознаванию речи. Откройте Настройки → Бюджет и включите «Микрофон» и «Распознавание речи».'
+      : 'Нет доступа к микрофону. Разрешите его приложению «Бюджет» в настройках телефона: Приложения → Бюджет → Разрешения → Микрофон.');
+    else if(code==='unavailable') micNote(ios
+      ? 'Распознавание речи сейчас недоступно. Проверьте интернет и что в Настройках → Siri включена Siri или диктовка.'
+      : 'На телефоне нет службы распознавания речи. Установите или обновите приложение Google из Play Маркета.');
     else if(/no match|didn.t understand|no speech/i.test(msg)) micNote('Ничего не услышала. Нажмите микрофон и скажите фразу ещё раз.');
     else if(/cancel/i.test(msg)) micNote('');
     else micNote('Распознавание не сработало ('+(msg||code||'ошибка')+'). Попробуйте ещё раз или напишите текстом.');
-  }finally{ listening=false; mic.classList.remove('on'); }
+  }finally{ listening=false; mic.classList.remove('on'); mic.setAttribute('aria-label','Записать голосом'); }
 }
 function startVoice(){
   const ta=$('#say');

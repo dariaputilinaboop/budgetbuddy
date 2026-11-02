@@ -1,0 +1,107 @@
+name: Build apps
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-apps
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap add android
+      - name: Icons and splash
+        run: npx --yes @capacitor/assets@3.0.5 generate --android --iconBackgroundColor '#1D6B58' --iconBackgroundColorDark '#0E1418' --splashBackgroundColor '#1D6B58' --splashBackgroundColorDark '#0E1418'
+      - name: Set version
+        run: |
+          sed -i "s/versionCode 1$/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          sed -i "s/versionName \"1.0\"/versionName \"1.0.${{ github.run_number }}\"/" android/app/build.gradle
+      - run: npx cap sync android
+      - name: Fixed signing key (updates install over the old app)
+        run: mkdir -p ~/.android && cp signing/debug.keystore ~/.android/debug.keystore
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+      - run: cp android/app/build/outputs/apk/debug/app-debug.apk budget-buddy.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: budget-buddy.apk
+
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap add ios
+      - name: Icons and splash
+        run: npx --yes @capacitor/assets@3.0.5 generate --ios --iconBackgroundColor '#1D6B58' --iconBackgroundColorDark '#0E1418' --splashBackgroundColor '#1D6B58' --splashBackgroundColorDark '#0E1418'
+      - name: Permissions text and version
+        run: |
+          PL=ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'Микрофон нужен, чтобы записывать траты голосом.'" $PL
+          /usr/libexec/PlistBuddy -c "Add :NSSpeechRecognitionUsageDescription string 'Распознавание речи превращает сказанное в записи о тратах.'" $PL
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 'Бюджет'" $PL || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 'Бюджет'" $PL
+          sed -i '' "s/MARKETING_VERSION = [^;]*;/MARKETING_VERSION = 1.0.${{ github.run_number }};/g; s/CURRENT_PROJECT_VERSION = [^;]*;/CURRENT_PROJECT_VERSION = ${{ github.run_number }};/g" ios/App/App.xcodeproj/project.pbxproj
+      - run: npx cap sync ios
+      - name: Build unsigned app
+        run: |
+          xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tail -40
+          test -d build/Build/Products/Release-iphoneos/App.app
+      - name: Package IPA
+        run: |
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/App.app Payload/
+          zip -qry budget-buddy.ipa Payload
+          ls -la budget-buddy.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios
+          path: budget-buddy.ipa
+
+  publish:
+    needs: [android, ios]
+    if: ${{ !cancelled() && (needs.android.result == 'success' || needs.ios.result == 'success') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -la out
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest out/* \
+            --target "${{ github.sha }}" \
+            --title "Голосовой бюджет 1.0.${{ github.run_number }}" \
+            --notes "budget-buddy.ipa — для iPhone (ставится через Sideloadly или AltStore). budget-buddy.apk — для Android." \
+            --latest

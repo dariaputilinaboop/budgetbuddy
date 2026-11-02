@@ -10,6 +10,7 @@
     "@capacitor-community/speech-recognition": "7.0.1",
     "@capacitor/android": "7.6.10",
     "@capacitor/core": "7.6.10",
+    "@capacitor/ios": "^7.6.10",
     "@capacitor/preferences": "7.0.4"
   },
   "devDependencies": {
