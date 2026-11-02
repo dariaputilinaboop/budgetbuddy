@@ -57,8 +57,11 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx cap add ios
-      - name: Icons and splash
-        run: npx --yes @capacitor/assets@3.0.5 generate --ios --iconBackgroundColor '#1D6B58' --iconBackgroundColorDark '#0E1418' --splashBackgroundColor '#1D6B58' --splashBackgroundColorDark '#0E1418'
+      - name: Icon and splash
+        run: |
+          A=ios/App/App/Assets.xcassets
+          cp assets/ios-icon.png $A/AppIcon.appiconset/AppIcon-512@2x.png
+          for f in splash-2732x2732.png splash-2732x2732-1.png splash-2732x2732-2.png; do cp assets/splash.png $A/Splash.imageset/$f; done
       - name: Permissions text and version
         run: |
           PL=ios/App/App/Info.plist
