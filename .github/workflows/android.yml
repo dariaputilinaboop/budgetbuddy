@@ -1,0 +1,69 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Create Android project
+        run: npx cap add android
+
+      - name: Generate icons and splash
+        run: npx --yes @capacitor/assets@3.0.5 generate --android --iconBackgroundColor '#1D6B58' --iconBackgroundColorDark '#0E1418' --splashBackgroundColor '#1D6B58' --splashBackgroundColorDark '#0E1418'
+
+      - name: Set version
+        run: |
+          sed -i "s/versionCode 1$/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          sed -i "s/versionName \"1.0\"/versionName \"1.0.${{ github.run_number }}\"/" android/app/build.gradle
+          grep -n "version" android/app/build.gradle
+
+      - name: Sync
+        run: npx cap sync android
+
+      - name: Use fixed signing key (so updates install over the old app)
+        run: mkdir -p ~/.android && cp signing/debug.keystore ~/.android/debug.keystore
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk budget-buddy.apk
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest budget-buddy.apk \
+            --target "${{ github.sha }}" \
+            --title "Голосовой бюджет 1.0.${{ github.run_number }}" \
+            --notes "Скачайте budget-buddy.apk на телефон Android и установите его." \
+            --latest

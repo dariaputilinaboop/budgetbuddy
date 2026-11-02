@@ -1,0 +1,725 @@
+<title>Голосовой бюджет</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: one phone-width column. Balances strip, then the voice composer, then a month ledger with tabs. */
+:root{
+  --bg:#ECEFF2; --surface:#FFFFFF; --surface-2:#F4F6F8; --ink:#15212A; --muted:#5D6B76; --line:#D6DDE3;
+  --accent:#1D6B58; --accent-ink:#FFFFFF; --accent-soft:#D8ECE5;
+  --income:#1C7A3B; --expense:#B23A30; --transfer:#5257A8; --warn:#9A6200;
+  --font-ui:"Onest", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-num:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r:14px;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1418; --surface:#161F25; --surface-2:#1C262D; --ink:#E4EBEF; --muted:#93A2AD; --line:#2A363E;
+  --accent:#4DBE9C; --accent-ink:#06150F; --accent-soft:#183A30;
+  --income:#5DCB84; --expense:#F07D72; --transfer:#A3A7F2; --warn:#E8B04B; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#0E1418; --surface:#161F25; --surface-2:#1C262D; --ink:#E4EBEF; --muted:#93A2AD; --line:#2A363E;
+  --accent:#4DBE9C; --accent-ink:#06150F; --accent-soft:#183A30;
+  --income:#5DCB84; --expense:#F07D72; --transfer:#A3A7F2; --warn:#E8B04B; color-scheme:dark }
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-ui);font-size:15px;line-height:1.45}
+.wrap{max-width:560px;margin:0 auto;padding-block:16px 120px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));display:flex;flex-direction:column;gap:16px}
+h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.01em}
+.num{font-family:var(--font-num);font-variant-numeric:tabular-nums;font-weight:500;white-space:nowrap}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.status{font-size:12px;color:var(--muted)}
+
+.balances{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.bal{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;min-width:0}
+.bal .lbl{font-size:12px;color:var(--muted);letter-spacing:.02em}
+.bal .num{font-size:15px;display:block;overflow:hidden;text-overflow:ellipsis}
+.total-line{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);padding:0 4px}
+
+.composer{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.comp-row{display:flex;gap:10px;align-items:stretch}
+textarea#say{flex:1;min-width:0;resize:none;min-height:64px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--surface-2)}
+.mic{width:64px;flex:none;border:none;border-radius:16px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center}
+.mic svg{width:26px;height:26px}
+.mic.on{animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 var(--accent-soft)}50%{box-shadow:0 0 0 8px var(--accent-soft)}}
+@media (prefers-reduced-motion: reduce){.mic.on{animation:none;outline:3px solid var(--accent-soft)}}
+.hint{font-size:13px;color:var(--muted)}
+.hint b{color:var(--ink);font-weight:500}
+.note{font-size:13px;background:var(--accent-soft);border-radius:10px;padding:8px 10px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 14px;font-weight:500}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.danger{color:var(--expense)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+.row-btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+
+.drafts{display:flex;flex-direction:column;gap:6px}
+.draft{display:flex;gap:10px;align-items:center;border:1px dashed var(--line);border-radius:12px;padding:8px 10px;background:var(--surface-2)}
+.draft .main{flex:1;min-width:0;text-align:left;background:none;border:none;padding:0}
+.x{border:none;background:none;color:var(--muted);font-size:20px;line-height:1;padding:4px 6px}
+
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:2px 8px;border-radius:99px;background:var(--surface-2);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+
+.monthbar{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.monthbar h2{font-size:17px;margin:0;font-weight:600;text-transform:capitalize}
+.arrow{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--surface)}
+.summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.summary div{min-width:0}
+.summary .lbl{font-size:12px;color:var(--muted)}
+.tabs{display:flex;gap:4px;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:4px;overflow-x:auto}
+.tab{flex:1;border:none;background:none;border-radius:9px;padding:8px 6px;color:var(--muted);font-weight:500;white-space:nowrap}
+.tab[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+
+.day{display:flex;flex-direction:column}
+.dayhead{display:flex;justify-content:space-between;align-items:baseline;padding:10px 4px 6px;font-weight:600;font-size:14px}
+.dayhead .num{font-size:13px;color:var(--expense)}
+.list{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.item{display:flex;gap:10px;align-items:center;width:100%;text-align:left;background:none;border:none;border-top:1px solid var(--line);padding:10px 12px}
+.item:first-child{border-top:none}
+.item .body{flex:1;min-width:0}
+.item .title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+.amt-exp{color:var(--ink)}
+.amt-inc{color:var(--income)}
+.amt-tr{color:var(--transfer)}
+.icon{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:none;font-size:13px;font-weight:600;color:#fff}
+
+.bars{display:flex;flex-direction:column;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.bar-row{display:flex;flex-direction:column;gap:4px}
+.bar-top{display:flex;justify-content:space-between;gap:8px;font-size:14px}
+.bar-top span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.track{height:8px;border-radius:99px;background:var(--surface-2);overflow:hidden}
+.fill{height:100%;border-radius:99px}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:12px}
+.panel h3{margin:0;font-size:15px;font-weight:600}
+.acc-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding-top:12px}
+.acc-row:first-of-type{border-top:none;padding-top:0}
+.acc-row form{display:flex;gap:6px}
+.acc-row input{width:130px}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field label{font-size:12px;color:var(--muted)}
+input[type=text],input[type=number],input[type=date],select{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface-2);min-width:0;width:100%}
+.types{display:flex;flex-wrap:wrap;gap:6px}
+.types .chip{font-size:13px;color:var(--ink);padding:4px 4px 4px 10px}
+.types .chip button{border:none;background:none;color:var(--muted);padding:0 4px;font-size:16px;line-height:1}
+.inline{display:flex;gap:6px}
+
+.empty{background:var(--surface);border:1px dashed var(--line);border-radius:var(--r);padding:18px;display:flex;flex-direction:column;gap:8px}
+.empty ul{margin:0;padding-left:18px;color:var(--muted);font-size:14px}
+
+.scrim{position:fixed;inset:0;background:rgba(5,10,14,.45);z-index:20}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;background:var(--surface);border-radius:18px 18px 0 0;border-top:1px solid var(--line);max-height:88%;overflow:auto;
+  padding-top:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom, 0px));padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
+.sheet-in{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+.seg{display:flex;gap:4px;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:4px}
+.seg button{flex:1;border:none;background:none;border-radius:9px;padding:7px 4px;color:var(--muted);font-weight:500}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom, 0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;z-index:30;max-width:calc(100% - 32px)}
+</style>
+
+<div class="wrap" id="app">
+  <div class="top">
+    <h1>Голосовой бюджет</h1>
+    <span class="status" id="status">Загружаю…</span>
+  </div>
+
+  <div>
+    <div class="balances" id="balances"></div>
+  </div>
+
+  <section class="composer" aria-label="Добавить запись">
+    <div class="comp-row">
+      <textarea id="say" rows="2" placeholder="Например: вчера такси 450 и кофе 200 наличными"></textarea>
+      <button class="mic" id="mic" type="button" aria-label="Записать голосом">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+      </button>
+    </div>
+    <div class="note" id="micnote" hidden></div>
+    <div class="row-btns" id="parseRow">
+      <span class="hint" style="margin-right:auto;align-self:center">Можно несколько трат сразу. Дату скажите словами: <b>вчера</b>, <b>в пятницу</b>, <b>28 октября</b>.</span>
+      <button class="btn primary" id="parseBtn" type="button">Разобрать</button>
+    </div>
+    <div class="drafts" id="drafts" hidden></div>
+  </section>
+
+  <div class="monthbar">
+    <button class="arrow" id="prevM" type="button" aria-label="Предыдущий месяц">‹</button>
+    <h2 id="mtitle"></h2>
+    <button class="arrow" id="nextM" type="button" aria-label="Следующий месяц">›</button>
+  </div>
+  <div class="summary" id="summary"></div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="days" type="button">По дням</button>
+    <button class="tab" role="tab" data-tab="cats" type="button">Категории</button>
+    <button class="tab" role="tab" data-tab="income" type="button">Доходы</button>
+    <button class="tab" role="tab" data-tab="accounts" type="button">Счета</button>
+  </div>
+
+  <div id="view"></div>
+</div>
+<div id="sheetHost"></div>
+<div id="toastHost"></div>
+
+<script>
+(function(){
+"use strict";
+/* ---------- справочники ---------- */
+const ACC = {card:'Карта', cash:'Наличные', saved:'Отложенные'};
+const ACC_KEYS = ['card','cash','saved'];
+const CATS = [
+  ['food','Продукты','#2E8B57',['продукт','магазин','супермаркет','пятерочк','магнит','перекрест','ашан','лент','вкусвилл','дикси','окей','молок','хлеб','булк','батон','овощ','фрукт','мяс','курица','сыр','яйц','крупа','макарон','самокат','лавк','газировк','вода в','котлет','колбас','рыб']],
+  ['cafe','Кафе и доставка','#C0622B',['кафе','кофе','капучино','латте','ресторан','обед','ужин','завтрак','бургер','пицц','суш','ролл','шаурм','макдон','вкусно и точка','kfc','кфс','доставк','столов','бар','ланч','пекарн','выпечк','кондитер','десерт','мороженое']],
+  ['transport','Транспорт','#2F6FB5',['такси','метро','автобус','проезд','транспорт','бензин','заправк','топлив','парковк','электричк','каршеринг','трамва','троллейбус','маршрутк','поезд','самолет','авиабилет','мойк','шиномонтаж']],
+  ['home','Жильё и ЖКХ','#7A5C3E',['коммунал','квартплат','жкх','аренд','квартир','электричеств','свет','газ','водоснабж','отоплен','интернет','ремонт']],
+  ['phone','Связь и подписки','#6A55B8',['телефон','мобильн','связь','связи','подписк','яндекс плюс','netflix','spotify','кинопоиск','icloud','айклауд','музык','vpn','впн']],
+  ['health','Здоровье','#C23B5A',['аптек','лекарств','таблет','врач','доктор','стоматолог','зуб','анализ','клиник','витамин','больниц','массаж']],
+  ['beauty','Красота','#B5509A',['маникюр','педикюр','ногти','парикмахер','стрижк','покраск','косметик','салон','ресниц','бров','крем','шампун','духи','уход','помад']],
+  ['clothes','Одежда и обувь','#4A7F8C',['одежд','обув','кроссовк','куртк','плать','джинс','футболк','носк','сапог','ботинк','кофт','брюк','юбк','свитер','пальто','белье']],
+  ['fun','Развлечения','#D08A16',['кино','театр','концерт','музей','выставк','игр','клуб','боулинг','караоке','квест','развлечен','аттракцион','путешеств','отель','гостиниц']],
+  ['shop','Покупки для дома','#5B7D2E',['озон','ozon','wildberries','вайлдберриз','вб','маркетплейс','хозтовар','бытов','посуд','мебел','икеа','техник','фикс прайс','порошок','моющ','бумаг','салфет']],
+  ['kids','Дети','#E0663E',['детск','ребен','сына','сыну','дочк','дочер','садик','школ','игрушк','памперс','подгузн','кружок','секци']],
+  ['pets','Животные','#8C6A2E',['корм','ветеринар','ветклиник','кошк','кот','коту','собак','лоток','наполнител','зоомагазин']],
+  ['gifts','Подарки','#C2416B',['подар','цвет','букет','день рождени','др']],
+  ['edu','Образование','#3C7A9E',['курс','книг','учеб','обучен','репетитор','урок','вебинар']],
+  ['sport','Спорт','#2D8F86',['спорт','фитнес','зал','абонемент','бассейн','йог','тренировк','тренер']],
+  ['credit','Кредиты и долги','#7B4B4B',['кредит','ипотек','рассрочк','долг','займ','процент']],
+  ['other','Другое','#7B8790',[]]
+];
+const CAT = Object.fromEntries(CATS.map(c=>[c[0],{id:c[0],name:c[1],color:c[2],kw:c[3]}]));
+const DEFAULT_IT = [
+  ['Аванс',['аванс']],
+  ['Премия',['преми','бонус']],
+  ['Отпускные',['отпускн']],
+  ['Больничный',['больничн']],
+  ['Подработка',['подработ','фриланс','халтур','заказ']],
+  ['Кэшбэк',['кэшбэк','кешбэк','кэшбек','кешбек','кэшбеки']],
+  ['Зарплата',['зарплат','зп','оклад','получк','расчет']],
+  ['Другое',[]]
+];
+const INCOME_HINTS = ['пришл','пришел','поступ','получил','доход','вернул','возврат','скинул','зачисл','стипенд','пенси','алимент','перевели мне','мне перевели'];
+const MONTHS_GEN = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const MONTH_STEMS = ['январ','феврал','март','апрел','ма','июн','июл','август','сентябр','октябр','ноябр','декабр'];
+const MONTHS_NOM = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+const WD_SHORT = ['вс','пн','вт','ср','чт','пт','сб'];
+const WEEKDAYS = [['воскрес',0],['понедельн',1],['вторник',2],['сред',3],['четверг',4],['пятниц',5],['суббот',6]];
+
+/* ---------- утилиты ---------- */
+const $ = s=>document.querySelector(s);
+const esc = s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nf = new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2});
+const fmt = n => nf.format(Math.round(n*100)/100)+' ₽';
+const pad = n=>String(n).padStart(2,'0');
+const ymd = d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const today = ()=>{const d=new Date(); d.setHours(12,0,0,0); return d;};
+const addDays = (d,n)=>{const x=new Date(d); x.setDate(x.getDate()+n); return x;};
+const parseYmd = s=>{const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d,12);};
+const uid = ()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const cap = s=>s? s.charAt(0).toUpperCase()+s.slice(1):s;
+
+/* ---------- разбор фразы ---------- */
+const NUMW = {ноль:0,один:1,одна:1,одну:1,два:2,две:2,три:3,четыре:4,пять:5,шесть:6,семь:7,восемь:8,девять:9,десять:10,одиннадцать:11,двенадцать:12,тринадцать:13,четырнадцать:14,пятнадцать:15,шестнадцать:16,семнадцать:17,восемнадцать:18,девятнадцать:19,двадцать:20,тридцать:30,сорок:40,пятьдесят:50,шестьдесят:60,семьдесят:70,восемьдесят:80,девяносто:90,сто:100,двести:200,триста:300,четыреста:400,пятьсот:500,шестьсот:600,семьсот:700,восемьсот:800,девятьсот:900,полторы:1.5,полтора:1.5};
+const isThousand = w=>/^(тысяч[аиу]?|тыщ[иау]?|тыс)$/.test(w);
+const SMALL_WORDS = new Set(['один','одна','одну','два','две','три','четыре']);
+
+function norm(s){
+  return String(s).toLowerCase().replace(/ё/g,'е').replace(/₽/g,' руб ')
+    .replace(/(\d)\s*[,.](\d)/g,'$1#$2')
+    .replace(/[^a-zа-я0-9#\s-]/g,' ').replace(/#/g,'.')
+    .replace(/(\d)-(?=[а-я])/g,'$1 ').replace(/\s+/g,' ').trim();
+}
+function wordsToNum(t){
+  const toks=t.split(' '), out=[];
+  let total=0,cur=0,last=Infinity,active=false,hasK=false;
+  const flush=()=>{ if(active){ out.push(String(total+cur)); } total=0;cur=0;last=Infinity;active=false;hasK=false; };
+  for(let i=0;i<toks.length;i++){
+    const w=toks[i], next=toks[i+1]||'';
+    if(isThousand(w) && active){ total+=(cur||1)*1000; cur=0; last=1000; hasK=true; continue; }
+    if(isThousand(w) && !active){ active=true; total=1000; hasK=true; last=1000; continue; }
+    let v=null;
+    if(Object.prototype.hasOwnProperty.call(NUMW,w)){
+      if(SMALL_WORDS.has(w) && !isThousand(next) && !active && !(next in NUMW)) v=null; else v=NUMW[w];
+    } else if(/^\d+(\.\d+)?$/.test(w)){
+      const n=parseFloat(w);
+      if(active && !(hasK && cur===0 && n<1000)) { flush(); }
+      if(!active || (hasK && cur===0)){ active=true; cur+=n; last=n<10?n:10; if(isThousand(next)){} continue; }
+    }
+    if(v!==null){
+      if(active && !(v<last)) flush();
+      active=true; cur+=v; last=v; continue;
+    }
+    flush(); out.push(w);
+  }
+  flush();
+  return out.join(' ');
+}
+function preNumbers(t){
+  t = t.replace(/(^|\s)(\d{1,3})((?:\s\d{3})+)(?=\s|$|\.\d)/g,(m,s,a,b)=>s+a+b.replace(/\s/g,''));
+  t = wordsToNum(t);
+  t = t.replace(/(\d+(?:\.\d+)?)\s?(к|тр|тыр)(?=\s|$)/g,(m,n)=>String(Math.round(parseFloat(n)*1000)));
+  t = t.replace(/(\d)\s?(руб\S*|рубл\S*|р|р\.)(?=\s|$)/g,'$1');
+  t = t.replace(/(^|\s)(руб|рублей|рубля|рубль|р)(?=\s|$)/g,' ');
+  return t.replace(/\s+/g,' ').trim();
+}
+
+function extractDate(t, base){
+  const now=today(); let d=null; let s=' '+t+' ';
+  const take=(re,fn)=>{ const m=s.match(re); if(m){ const r=fn(m); if(r){ d=r; s=s.replace(m[0],' '); } } };
+  take(/\sпозавчера\s/,()=>addDays(now,-2));
+  if(!d) take(/\sвчера\s/,()=>addDays(now,-1));
+  if(!d) take(/\sсегодня\s/,()=>now);
+  if(!d) take(/\s(\d{1,2})\s(январ|феврал|март|апрел|мая|май|июн|июл|август|сентябр|октябр|ноябр|декабр)\S*\s/,m=>{
+    const mi=MONTH_STEMS.findIndex(st=> m[2].startsWith(st)); const day=+m[1];
+    if(mi<0||day<1||day>31) return null;
+    let x=new Date(now.getFullYear(),mi,day,12); if(x>now) x=new Date(now.getFullYear()-1,mi,day,12); return x;});
+  if(!d) take(/\s(\d{1,2})\s?(го\s)?числа\s/,m=>{ const day=+m[1]; if(day<1||day>31) return null;
+    let x=new Date(now.getFullYear(),now.getMonth(),day,12); if(x>now) x=new Date(now.getFullYear(),now.getMonth()-1,day,12); return x;});
+  if(!d) take(/\s(\d{1,2})\s(день|дня|дней)\sназад\s/,m=>addDays(now,-(+m[1])));
+  if(!d) take(/\s(неделю)\sназад\s/,()=>addDays(now,-7));
+  if(!d) take(/\s(в|во|на)?\s?(прошл\S*\s)?(воскресень\S*|понедельник\S*|вторник\S*|сред\S*|четверг\S*|пятниц\S*|суббот\S*)\s/,m=>{
+    const wd=WEEKDAYS.find(([st])=>m[3].startsWith(st)); if(!wd) return null;
+    let diff=(now.getDay()-wd[1]+7)%7; if(m[2]&&diff===0) diff=7; return addDays(now,-diff);});
+  return {date:d?ymd(d):null, rest:s.replace(/\s+/g,' ').trim()};
+}
+
+const has = (s,stem)=> (' '+s).indexOf(' '+stem)>=0;
+const hasAny = (s,arr)=> arr.some(k=>has(s,k));
+const FILLER = ['снял','отлож','положил','взял','достал','пришл','поступ','получил','потратил','купил','заплатил','оплатил','отдал','ушло','ушли','было','это','еще','также','потом','записать','запиши','добавь','добавить','трата','траты','расход','сумма','рублей','руб','на','за','в','во','с','со','из','по','у','и','а','мне','я'];
+const ACC_WORDS = ['наличн','налом','наликом','налич','кэш','кеш','картой','карте','карты','карту','карта','отложен','копилк','заначк'];
+
+function catFor(s, learned){
+  const toks=s.split(' ');
+  for(const tk of toks){ const k=tk.slice(0,5); if(k.length>=3 && learned && learned[k] && CAT[learned[k]]) return learned[k]; }
+  let best='other',score=0;
+  for(const c of CATS){ for(const k of c[3]){ if(has(s,k) && k.length>score){ best=c[0]; score=k.length; } } }
+  return best;
+}
+function incomeTypeFor(s, types){
+  for(const t of types){
+    const def=DEFAULT_IT.find(x=>x[0]===t);
+    const kws = def? def[1] : [t.toLowerCase().replace(/ё/g,'е').slice(0,5)];
+    if(kws.length && hasAny(s,kws)) return t;
+  }
+  return null;
+}
+function accountFrom(s){
+  if(/(^|\s)(из|с|со)\s(отложен|копилк|заначк)/.test(s)) return 'saved';
+  if(hasAny(s,['наличн','налом','наликом','налич','кэшем','кешем','кэш','кеш'])) return 'cash';
+  return 'card';
+}
+function noteFrom(tokens){
+  const out=tokens.filter(w=>!/^\d+(\.\d+)?$/.test(w) && !ACC_WORDS.some(a=>w.startsWith(a)) && !FILLER.some(f=> f.length<=3 ? w===f : w.startsWith(f)));
+  return cap(out.join(' ').trim());
+}
+
+function classify(chunk, date, ctx){
+  const s=chunk.join(' ');
+  const nums=chunk.filter(w=>/^\d+(\.\d+)?$/.test(w)).map(Number);
+  const amount = nums.length? Math.max(...nums) : 0;
+  const note = noteFrom(chunk);
+  const base={id:uid(), amount, date, note, src:s};
+  const toSaved = /(^|\s)(отлож|в копилк|в заначк)/.test(s) || /(^|\s)(в|на)\s(отложен)/.test(s);
+  const fromSaved = /(^|\s)(из|с|со)\s(отложен|копилк|заначк)/.test(s);
+  const withdraw = hasAny(s,['снял','снять','обналич','сняли']);
+  const deposit = /(положил|внесл|закинул|положила|пополнил)\S*/.test(s) && has(s,'карт');
+  if(fromSaved && (/(^|\s)на\sкарт/.test(s) || /(^|\s)в\sналич/.test(s) || hasAny(s,['взял','перевел','переложил','достал']))){
+    return {...base,kind:'transfer',from:'saved',to: has(s,'налич')?'cash':'card', note: note||'Из отложенных'};
+  }
+  if(toSaved && !fromSaved){
+    return {...base,kind:'transfer',from: hasAny(s,['налич','налом','кэш','кеш'])?'cash':'card',to:'saved', note: note||'Отложила'};
+  }
+  if(withdraw){ return {...base,kind:'transfer',from:'card',to:'cash',note: note||'Сняла наличные'}; }
+  if(deposit){ return {...base,kind:'transfer',from:'cash',to:'card',note: note||'Положила на карту'}; }
+  const types=ctx.incomeTypes;
+  const it=incomeTypeFor(s,types);
+  if(it || hasAny(s,INCOME_HINTS)){
+    return {...base,kind:'income',incomeType: it || (types.includes('Другое')?'Другое':types[types.length-1]), account: has(s,'налич')||has(s,'налом')?'cash':'card', note: note||it||'Доход'};
+  }
+  return {...base,kind:'expense',category:catFor(s,ctx.learned),account:accountFrom(s)};
+}
+
+function parsePhrase(text, ctx){
+  let t=preNumbers(norm(text));
+  if(!t) return [];
+  let segs=t.split(/\s(?:и|а также|а еще|еще|потом|затем|плюс ещ\S*)\s/).map(x=>x.trim()).filter(Boolean);
+  const raw=String(text).split(/[;\n]|,(?!\d)/);
+  if(raw.length>1){ const ss=[]; for(const r of raw){ const tt=preNumbers(norm(r)); if(tt) ss.push(...tt.split(/\s(?:и|а также|а еще|еще|потом|затем)\s/)); } segs=ss.map(x=>x.trim()).filter(Boolean); }
+  let curDate=ymd(today());
+  const items=[]; let pending=[];
+  const pieces=[];
+  for(const seg of segs){
+    const {date,rest}=extractDate(seg);
+    if(date) curDate=date;
+    pieces.push({date:curDate,toks:rest?rest.split(' '):[]});
+  }
+  // слить куски без суммы со следующими
+  const merged=[];
+  for(let i=0;i<pieces.length;i++){
+    const p=pieces[i]; const hasNum=p.toks.some(w=>/^\d+(\.\d+)?$/.test(w));
+    if(hasNum){ merged.push({date:p.date,toks:pending.concat(p.toks)}); pending=[]; }
+    else pending=pending.concat(p.toks);
+  }
+  if(pending.length && merged.length){ merged[merged.length-1].toks=merged[merged.length-1].toks.concat(pending); }
+  for(const m of merged){
+    let toks=m.toks;
+    const numIdx=toks.map((w,i)=>/^\d+(\.\d+)?$/.test(w)?i:-1).filter(i=>i>=0);
+    const big=numIdx.filter(i=>parseFloat(toks[i])>=10);
+    const amtIdx = big.length? big : numIdx;
+    if(big.length && big.length<numIdx.length){ toks=toks.filter((w,i)=>!(numIdx.includes(i)&&!big.includes(i))); }
+    const idx=toks.map((w,i)=>/^\d+(\.\d+)?$/.test(w)?i:-1).filter(i=>i>=0);
+    let chunks=[];
+    if(idx.length<=1) chunks=[toks];
+    else if(idx[0]===0){ for(let k=0;k<idx.length;k++) chunks.push(toks.slice(idx[k], idx[k+1]===undefined?toks.length:idx[k+1])); }
+    else { let st=0; for(let k=0;k<idx.length;k++){ chunks.push(toks.slice(st,idx[k]+1)); st=idx[k]+1; } if(st<toks.length) chunks[chunks.length-1]=chunks[chunks.length-1].concat(toks.slice(st)); }
+    for(const c of chunks){ const it=classify(c,m.date,ctx); if(it.amount>0) items.push(it); }
+  }
+  return items;
+}
+
+/* ---------- состояние и хранилище ---------- */
+const S = {mode:'loading', txs:[], settings:{incomeTypes:null, learned:{}}, drafts:[], tab:'days', month: ymd(today()).slice(0,7), editing:null, confirmDel:false, error:null};
+let backend=null;
+const incomeTypes = ()=> (S.settings.incomeTypes && S.settings.incomeTypes.length)? S.settings.incomeTypes : DEFAULT_IT.map(x=>x[0]);
+const clean = o=>{ const r={}; for(const k in o){ if(o[k]!==undefined && k!=='src') r[k]=o[k]; } return r; };
+
+async function localBackend(note){
+  const KEY='golosovoy-budget-v1';
+  const NB=(window.NativeBudget&&window.NativeBudget.isNative)?window.NativeBudget:null;
+  let raw=null;
+  if(NB){ try{ raw=await NB.load(KEY); }catch(e){} }
+  if(!raw){ try{ raw=localStorage.getItem(KEY); }catch(e){} }
+  try{ if(raw){ const d=JSON.parse(raw); S.txs=d.txs||[]; S.settings=Object.assign({incomeTypes:null,learned:{}},d.settings||{}); } }catch(e){}
+  const persist=()=>{
+    const json=JSON.stringify({txs:S.txs,settings:S.settings});
+    if(NB) NB.save(KEY,json).catch(()=>toast('Не получилось сохранить запись'));
+    try{ localStorage.setItem(KEY,json); }catch(e){ if(!NB) toast('Не получилось сохранить в этом браузере'); }
+  };
+  backend={
+    put:async tx=>{ const i=S.txs.findIndex(x=>x.id===tx.id); if(i>=0) S.txs[i]=tx; else S.txs.push(tx); persist(); },
+    del:async id=>{ S.txs=S.txs.filter(x=>x.id!==id); persist(); },
+    saveSettings:async ()=>persist()
+  };
+  S.mode='local'; S.localNote=note||(NB?'Записи хранятся на этом телефоне':'Записи хранятся в этом браузере');
+  render();
+}
+function dbBackend(db,id){
+  const col=db.collection('data/users/'+id+'/tx/items');
+  const setRef=db.doc('data/users/'+id+'/settings');
+  const timer=setTimeout(()=>{ if(S.mode==='loading'){ S.mode='db'; S.error='Данные загружаются дольше обычного'; render(); } },10000);
+  col.onSnapshot(snap=>{ clearTimeout(timer); S.txs=snap.docs.map(d=>Object.assign({},d.data(),{id:d.id})); S.mode='db'; S.error=null; render(); },
+    err=>{ clearTimeout(timer); S.mode='db'; S.error='Не удалось загрузить записи ('+(err&&err.code||'ошибка')+')'; render(); });
+  setRef.onSnapshot(s=>{ const d=(s&&s.data&&s.data())||{}; S.settings={incomeTypes:d.incomeTypes||null, learned:d.learned||{}}; render(); }, ()=>{});
+  const localPut=tx=>{ const i=S.txs.findIndex(x=>x.id===tx.id); if(i>=0) S.txs[i]=tx; else S.txs.push(tx); };
+  backend={
+    put:async tx=>{ localPut(tx); await col.doc(tx.id).set(clean(tx)); },
+    del:async id=>{ S.txs=S.txs.filter(x=>x.id!==id); await col.doc(id).delete(); },
+    saveSettings:async ()=>{ await setRef.set({incomeTypes:incomeTypes(), learned:S.settings.learned||{}}); }
+  };
+}
+async function initStore(){
+  let db=null,user=null,id=null;
+  if(window.claude && typeof window.claude.use==='function'){
+    try{ const r=await Promise.all([window.claude.use('db'), window.claude.use('user')]); db=r[0]; user=r[1]; if(user) id=await user.id(); }catch(e){}
+    if(db && id) return dbBackend(db,id);
+    return localBackend('Войдите в claude.ai, чтобы записи сохранялись в аккаунте. Сейчас они хранятся только в этом браузере.');
+  }
+  localBackend();
+}
+async function safe(p){ try{ await p; }catch(e){ toast(e&&e.code==='quota_exceeded'?'Хранилище заполнено':'Не удалось сохранить, попробуйте ещё раз'); } }
+
+/* ---------- вычисления ---------- */
+function balances(){
+  const b={card:0,cash:0,saved:0};
+  for(const t of S.txs){
+    const a=+t.amount||0;
+    if(t.kind==='expense') b[t.account||'card']-=a;
+    else if(t.kind==='income') b[t.account||'card']+=a;
+    else if(t.kind==='transfer'){ b[t.from]-=a; b[t.to]+=a; }
+    else if(t.kind==='adjust') b[t.account]+=a;
+  }
+  return b;
+}
+const inMonth = t=> (t.date||'').slice(0,7)===S.month;
+
+/* ---------- отрисовка ---------- */
+function monthTitle(){ const [y,m]=S.month.split('-').map(Number); return MONTHS_NOM[m-1]+' '+y; }
+function dayTitle(s){
+  const t=ymd(today()), y=ymd(addDays(today(),-1)); const d=parseYmd(s);
+  const base=d.getDate()+' '+MONTHS_GEN[d.getMonth()];
+  if(s===t) return 'Сегодня, '+base; if(s===y) return 'Вчера, '+base;
+  return cap(WD_SHORT[d.getDay()])+', '+base;
+}
+function shortDate(s){ if(s===ymd(today())) return 'сегодня'; if(s===ymd(addDays(today(),-1))) return 'вчера'; const d=parseYmd(s); return d.getDate()+' '+MONTHS_GEN[d.getMonth()]; }
+
+function iconFor(t){
+  if(t.kind==='expense'){ const c=CAT[t.category]||CAT.other; return '<span class="icon" style="background:'+c.color+'">'+esc(c.name.slice(0,2))+'</span>'; }
+  if(t.kind==='income') return '<span class="icon" style="background:var(--income)">+</span>';
+  if(t.kind==='transfer') return '<span class="icon" style="background:var(--transfer)">⇄</span>';
+  return '<span class="icon" style="background:var(--muted)">±</span>';
+}
+function describe(t){
+  if(t.kind==='expense'){ const c=CAT[t.category]||CAT.other; return {title:t.note||c.name, meta:[c.name, ACC[t.account]||'Карта'], amt:'−'+fmt(t.amount), cls:'amt-exp'}; }
+  if(t.kind==='income') return {title:t.note||t.incomeType, meta:[t.incomeType||'Доход','на '+(t.account==='cash'?'наличные':t.account==='saved'?'отложенные':'карту')], amt:'+'+fmt(t.amount), cls:'amt-inc'};
+  if(t.kind==='transfer') return {title:t.note||'Перевод', meta:[ACC[t.from]+' → '+ACC[t.to]], amt:fmt(t.amount), cls:'amt-tr'};
+  return {title:'Сверка остатка', meta:[ACC[t.account]], amt:(t.amount>0?'+':'−')+fmt(Math.abs(t.amount)), cls:'muted'};
+}
+function itemHtml(t, draftIdx){
+  const d=describe(t);
+  const meta=d.meta.map(m=>'<span class="chip">'+esc(m)+'</span>').join('') + (draftIdx!=null?'<span class="chip">'+esc(shortDate(t.date))+'</span>':'');
+  const attr = draftIdx!=null? 'data-draft="'+draftIdx+'"' : 'data-id="'+esc(t.id)+'"';
+  return '<button class="'+(draftIdx!=null?'main':'item')+'" type="button" '+attr+' style="display:flex;gap:10px;align-items:center">'+iconFor(t)+
+    '<span class="body"><span class="title">'+esc(d.title)+'</span><span class="meta">'+meta+'</span></span><span class="num '+d.cls+'">'+esc(d.amt)+'</span></button>';
+}
+
+function render(){
+  const st=$('#status');
+  st.textContent = S.mode==='loading'?'Загружаю…' : S.error? S.error : S.mode==='db'?'Сохраняется в вашем аккаунте' : (S.localNote||'');
+  const b=balances();
+  $('#balances').innerHTML = ACC_KEYS.map(k=>'<div class="bal"><div class="lbl">'+ACC[k]+'</div><span class="num">'+fmt(b[k])+'</span></div>').join('');
+  // drafts
+  const dh=$('#drafts');
+  if(S.drafts.length){
+    dh.hidden=false;
+    dh.innerHTML = '<div class="hint">Проверьте, что я поняла. Нажмите на строку, чтобы исправить.</div>'+
+      S.drafts.map((t,i)=>'<div class="draft">'+itemHtml(t,i)+'<button class="x" type="button" data-undraft="'+i+'" aria-label="Убрать">×</button></div>').join('')+
+      '<div class="row-btns"><button class="btn ghost" type="button" id="cancelDrafts">Отмена</button><button class="btn primary" type="button" id="saveDrafts">Сохранить ('+S.drafts.length+')</button></div>';
+  } else { dh.hidden=true; dh.innerHTML=''; }
+  $('#mtitle').textContent=monthTitle();
+  const mt=S.txs.filter(inMonth);
+  const exp=mt.filter(t=>t.kind==='expense').reduce((a,t)=>a+(+t.amount||0),0);
+  const inc=mt.filter(t=>t.kind==='income').reduce((a,t)=>a+(+t.amount||0),0);
+  $('#summary').innerHTML='<div><div class="lbl">Траты</div><span class="num" style="color:var(--expense)">'+fmt(exp)+'</span></div>'+
+    '<div><div class="lbl">Доходы</div><span class="num" style="color:var(--income)">'+fmt(inc)+'</span></div>'+
+    '<div><div class="lbl">Разница</div><span class="num">'+(inc-exp<0?'−':'')+fmt(Math.abs(inc-exp))+'</span></div>';
+  document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected', String(x.dataset.tab===S.tab)));
+  const v=$('#view');
+  if(S.tab==='days') v.innerHTML=viewDays(mt);
+  else if(S.tab==='cats') v.innerHTML=viewCats(mt,exp);
+  else if(S.tab==='income') v.innerHTML=viewIncome(mt,inc);
+  else v.innerHTML=viewAccounts(b);
+  renderSheet();
+}
+function emptyBlock(){
+  return '<div class="empty"><strong>'+(S.mode==='loading'?'Загружаю записи…':'В этом месяце пока пусто')+'</strong>'+
+    '<span class="muted small">Нажмите микрофон и скажите, например:</span><ul>'+
+    '<li>«вчера продукты в Пятёрочке 1240 и такси 380»</li><li>«пришла зарплата 65 000»</li><li>«аванс 30 тысяч, отложила 10 000»</li><li>«сняла 3000 наличными»</li><li>«кофе 220 наличными»</li></ul></div>';
+}
+function viewDays(mt){
+  if(!mt.length) return emptyBlock();
+  const by={};
+  for(const t of mt){ (by[t.date]=by[t.date]||[]).push(t); }
+  const days=Object.keys(by).sort().reverse();
+  return '<div style="display:flex;flex-direction:column;gap:4px">'+days.map(d=>{
+    const list=by[d].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    const sum=list.filter(t=>t.kind==='expense').reduce((a,t)=>a+(+t.amount||0),0);
+    return '<section class="day"><div class="dayhead"><span>'+esc(dayTitle(d))+'</span>'+(sum?'<span class="num">−'+fmt(sum)+'</span>':'')+'</div><div class="list">'+list.map(t=>itemHtml(t)).join('')+'</div></section>';
+  }).join('')+'</div>';
+}
+function barsHtml(rows,total,colorOf){
+  return '<div class="bars">'+rows.map(([k,name,sum])=>{
+    const p=total?sum/total*100:0;
+    return '<div class="bar-row"><div class="bar-top"><span>'+esc(name)+'</span><span class="num">'+fmt(sum)+' <span class="muted small">'+Math.round(p)+'%</span></span></div><div class="track"><div class="fill" style="width:'+p.toFixed(1)+'%;background:'+colorOf(k)+'"></div></div></div>';
+  }).join('')+'</div>';
+}
+function viewCats(mt,total){
+  const ex=mt.filter(t=>t.kind==='expense'); if(!ex.length) return emptyBlock();
+  const m={}; for(const t of ex){ const c=t.category||'other'; m[c]=(m[c]||0)+(+t.amount||0); }
+  const rows=Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([k,s])=>[k,(CAT[k]||CAT.other).name,s]);
+  return barsHtml(rows,total,k=>(CAT[k]||CAT.other).color);
+}
+function viewIncome(mt,total){
+  const inc=mt.filter(t=>t.kind==='income');
+  const types=incomeTypes();
+  let h='';
+  if(inc.length){
+    const m={}; for(const t of inc){ const k=t.incomeType||'Другое'; m[k]=(m[k]||0)+(+t.amount||0); }
+    const rows=Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([k,s])=>[k,k,s]);
+    h+=barsHtml(rows,total,()=> 'var(--income)');
+    h+='<div class="list">'+inc.sort((a,b)=>b.date.localeCompare(a.date)).map(t=>itemHtml(t)).join('')+'</div>';
+  } else h+='<div class="empty"><strong>Доходов за этот месяц нет</strong><span class="muted small">Скажите: «пришла зарплата 65 000» или «премия 15 тысяч на карту». Вид дохода я определю по слову.</span></div>';
+  h+='<div class="panel"><h3>Виды доходов</h3><span class="muted small">Я узнаю вид по названию во фразе. Добавьте свои, например «Зарплата Ozon» или «Вторая работа».</span><div class="types">'+
+    types.map((t,i)=>'<span class="chip">'+esc(t)+(t==='Другое'?'':'<button type="button" data-deltype="'+i+'" aria-label="Удалить вид '+esc(t)+'">×</button>')+'</span>').join('')+
+    '</div><form class="inline" id="addTypeForm"><input type="text" id="newType" placeholder="Новый вид дохода" maxlength="40"><button class="btn" type="submit">Добавить</button></form></div>';
+  return '<div style="display:flex;flex-direction:column;gap:12px">'+h+'</div>';
+}
+function viewAccounts(b){
+  const total=b.card+b.cash+b.saved;
+  return '<div class="panel"><h3>Остатки на счетах</h3>'+ACC_KEYS.map(k=>
+    '<div class="acc-row"><div><div>'+ACC[k]+'</div><span class="num">'+fmt(b[k])+'</span></div><form data-acc="'+k+'"><input type="number" inputmode="decimal" step="0.01" id="fix-'+k+'" placeholder="Сколько на самом деле"><button class="btn" type="submit">Сверить</button></form></div>').join('')+
+    '<div class="acc-row"><strong>Всего</strong><span class="num">'+fmt(total)+'</span></div>'+
+    '<span class="muted small">Впишите фактический остаток, и я добавлю запись «Сверка остатка» на разницу. Так удобно задать стартовые суммы.</span></div>'+
+    '<div class="panel"><h3>Переводы между счетами голосом</h3><ul class="muted small" style="margin:0;padding-left:18px">'+
+    '<li>«отложила 5000» — с карты в отложенные</li><li>«сняла 3000» — с карты в наличные</li><li>«положила 2000 на карту» — из наличных на карту</li><li>«взяла из отложенных 4000 на карту»</li></ul></div>';
+}
+
+/* ---------- окно редактирования ---------- */
+function openEdit(target){ if(target.id){ const t=S.txs.find(x=>x.id===target.id); if(!t) return; target.tx={...t}; } S.editing=target; S.confirmDel=false; render(); setTimeout(()=>{ const a=$('#e-amount'); if(a) a.focus({preventScroll:true}); },30); }
+function currentEditTx(){
+  if(!S.editing) return null;
+  if(S.editing.draft!=null) return S.drafts[S.editing.draft];
+  return S.editing.tx;
+}
+function opt(v,label,sel){ return '<option value="'+esc(v)+'"'+(v===sel?' selected':'')+'>'+esc(label)+'</option>'; }
+function renderSheet(){
+  const host=$('#sheetHost'); const t=currentEditTx();
+  if(!t){ host.innerHTML=''; return; }
+  if(document.getElementById('editForm') && host.dataset.for===(S.editing.id||'d'+S.editing.draft)+t.kind+S.confirmDel) return;
+  host.dataset.for=(S.editing.id||'d'+S.editing.draft)+t.kind+S.confirmDel;
+  const k=t.kind;
+  const accSel=(id,val)=>'<select id="'+id+'">'+ACC_KEYS.map(a=>opt(a,ACC[a],val)).join('')+'</select>';
+  let fields='';
+  if(k==='expense') fields='<div class="grid2"><div class="field"><label for="e-cat">Категория</label><select id="e-cat">'+CATS.map(c=>opt(c[0],c[1],t.category)).join('')+'</select></div><div class="field"><label for="e-acc">Откуда</label>'+accSel('e-acc',t.account||'card')+'</div></div>';
+  else if(k==='income'){ const types=incomeTypes(); const list=types.includes(t.incomeType)||!t.incomeType?types:types.concat([t.incomeType]);
+    fields='<div class="grid2"><div class="field"><label for="e-it">Вид дохода</label><select id="e-it">'+list.map(x=>opt(x,x,t.incomeType)).join('')+'</select></div><div class="field"><label for="e-acc">Куда</label>'+accSel('e-acc',t.account||'card')+'</div></div>'; }
+  else if(k==='transfer') fields='<div class="grid2"><div class="field"><label for="e-from">Откуда</label>'+accSel('e-from',t.from)+'</div><div class="field"><label for="e-to">Куда</label>'+accSel('e-to',t.to)+'</div></div>';
+  else fields='<div class="field"><label for="e-acc">Счёт</label>'+accSel('e-acc',t.account)+'</div>';
+  const isDraft=S.editing.draft!=null;
+  host.innerHTML='<div class="scrim" data-close="1"></div><div class="sheet" role="dialog" aria-label="Запись"><form class="sheet-in" id="editForm">'+
+    (k==='adjust'?'<h3 style="margin:0">Сверка остатка</h3>':'<div class="seg" role="group" aria-label="Тип">'+[['expense','Трата'],['income','Доход'],['transfer','Перевод']].map(([v,l])=>'<button type="button" data-kind="'+v+'" aria-pressed="'+(k===v)+'">'+l+'</button>').join('')+'</div>')+
+    '<div class="grid2"><div class="field"><label for="e-amount">Сумма, ₽'+(k==='adjust'?' (минус — уменьшить)':'')+'</label><input type="number" inputmode="decimal" step="0.01" id="e-amount" value="'+esc(t.amount)+'"></div>'+
+    '<div class="field"><label for="e-date">Дата</label><input type="date" id="e-date" value="'+esc(t.date)+'"></div></div>'+fields+
+    '<div class="field"><label for="e-note">Описание</label><input type="text" id="e-note" value="'+esc(t.note||'')+'" maxlength="120"></div>'+
+    '<div class="row-btns">'+(isDraft?'':'<button type="button" class="btn danger" id="delBtn" style="margin-right:auto">'+(S.confirmDel?'Точно удалить?':'Удалить')+'</button>')+
+    '<button type="button" class="btn ghost" data-close="1">Закрыть</button><button type="submit" class="btn primary">'+(isDraft?'Готово':'Сохранить')+'</button></div></form></div>';
+}
+function readSheet(t){
+  const g=id=>{ const e=document.getElementById(id); return e?e.value:undefined; };
+  const n={...t};
+  n.amount=parseFloat(String(g('e-amount')).replace(',','.'))||0;
+  n.date=g('e-date')||t.date; n.note=(g('e-note')||'').trim();
+  if(t.kind==='expense'){ n.category=g('e-cat'); n.account=g('e-acc'); }
+  if(t.kind==='income'){ n.incomeType=g('e-it'); n.account=g('e-acc'); }
+  if(t.kind==='transfer'){ n.from=g('e-from'); n.to=g('e-to'); }
+  if(t.kind==='adjust'){ n.account=g('e-acc'); }
+  return n;
+}
+function switchKind(t,kind){
+  const n={...t,kind};
+  if(kind==='expense'){ n.category=n.category||catFor(norm(n.note||''),S.settings.learned); n.account=n.account||'card'; }
+  if(kind==='income'){ n.incomeType=n.incomeType||incomeTypes()[0]; n.account=n.account||'card'; }
+  if(kind==='transfer'){ n.from=n.from||'card'; n.to=n.to&&n.to!==n.from?n.to:(n.from==='card'?'saved':'card'); }
+  return n;
+}
+function learn(oldT,newT){
+  if(newT.kind!=='expense'||!newT.note||oldT.category===newT.category) return;
+  const first=norm(newT.note).split(' ').find(w=>w.length>=3 && !FILLER.includes(w));
+  if(!first) return;
+  S.settings.learned=Object.assign({},S.settings.learned,{[first.slice(0,5)]:newT.category});
+  safe(backend.saveSettings());
+}
+function storeEdit(n){
+  if(S.editing.draft!=null){ S.drafts[S.editing.draft]=n; }
+  else { n.updatedAt=Date.now(); safe(backend.put(n)); }
+}
+
+/* ---------- голос ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec=null, listening=false, baseText='';
+function micNote(msg){ const n=$('#micnote'); n.textContent=msg; n.hidden=!msg; }
+const KEYBOARD_HINT='Здесь браузер не даёт доступ к микрофону. Нажмите значок микрофона на клавиатуре телефона и надиктуйте фразу в поле, потом «Разобрать».';
+async function startNativeVoice(){
+  const ta=$('#say'), mic=$('#mic');
+  if(listening) return;
+  listening=true; micNote(''); mic.classList.add('on');
+  try{
+    const text=await window.NativeBudget.listen();
+    if(text){ const base=ta.value.trim(); ta.value=(base?base+' ':'')+text; doParse(); }
+    else micNote('Ничего не услышала. Нажмите микрофон и скажите фразу ещё раз.');
+  }catch(e){
+    const code=e&&e.code, msg=String(e&&e.message||'');
+    if(code==='denied') micNote('Нет доступа к микрофону. Разрешите его приложению «Бюджет» в настройках телефона: Приложения → Бюджет → Разрешения → Микрофон.');
+    else if(code==='unavailable') micNote('На телефоне нет службы распознавания речи. Установите или обновите приложение Google из Play Маркета.');
+    else if(/no match|didn.t understand|no speech/i.test(msg)) micNote('Ничего не услышала. Нажмите микрофон и скажите фразу ещё раз.');
+    else if(/cancel/i.test(msg)) micNote('');
+    else micNote('Распознавание не сработало ('+(msg||code||'ошибка')+'). Попробуйте ещё раз или напишите текстом.');
+  }finally{ listening=false; mic.classList.remove('on'); }
+}
+function startVoice(){
+  const ta=$('#say');
+  if(window.NativeBudget && window.NativeBudget.isNative) return startNativeVoice();
+  if(!SR){ micNote(KEYBOARD_HINT); ta.focus(); return; }
+  if(listening){ try{ rec.stop(); }catch(e){} return; }
+  try{
+    rec=new SR(); rec.lang='ru-RU'; rec.interimResults=true; rec.continuous=false; rec.maxAlternatives=1;
+    baseText=ta.value.trim(); let finalText='';
+    rec.onresult=e=>{ let interim=''; for(let i=e.resultIndex;i<e.results.length;i++){ const r=e.results[i]; if(r.isFinal) finalText+=r[0].transcript+' '; else interim+=r[0].transcript; } ta.value=(baseText?baseText+' ':'')+(finalText+interim).trim(); };
+    rec.onerror=e=>{ if(e.error==='not-allowed'||e.error==='service-not-allowed'||e.error==='audio-capture') micNote(KEYBOARD_HINT); else if(e.error==='no-speech') micNote('Ничего не услышала. Нажмите микрофон и говорите сразу после сигнала.'); else micNote('Распознавание прервалось ('+e.error+'). Можно надиктовать с клавиатуры.'); };
+    rec.onend=()=>{ listening=false; $('#mic').classList.remove('on'); $('#mic').setAttribute('aria-label','Записать голосом'); if(ta.value.trim() && ta.value.trim()!==baseText) doParse(); };
+    rec.start(); listening=true; micNote(''); $('#mic').classList.add('on'); $('#mic').setAttribute('aria-label','Остановить запись');
+  }catch(e){ micNote(KEYBOARD_HINT); ta.focus(); }
+}
+function doParse(){
+  const ta=$('#say'); const text=ta.value.trim(); if(!text) { ta.focus(); return; }
+  const items=parsePhrase(text,{incomeTypes:incomeTypes(),learned:S.settings.learned});
+  if(!items.length){ micNote('Не нашла сумму. Скажите, например: «такси 450».'); return; }
+  micNote(''); S.drafts=S.drafts.concat(items); ta.value=''; render();
+}
+let toastTimer;
+function toast(msg){ const h=$('#toastHost'); h.innerHTML='<div class="toast" role="status">'+esc(msg)+'</div>'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>h.innerHTML='',2600); }
+
+/* ---------- события ---------- */
+document.addEventListener('click',e=>{
+  const el=e.target.closest('button,[data-close]'); if(!el) return;
+  if(el.id==='mic') return startVoice();
+  if(el.id==='parseBtn') return doParse();
+  if(el.id==='prevM'||el.id==='nextM'){ const [y,m]=S.month.split('-').map(Number); const d=new Date(y,m-1+(el.id==='prevM'?-1:1),1); S.month=d.getFullYear()+'-'+pad(d.getMonth()+1); return render(); }
+  if(el.dataset.tab){ S.tab=el.dataset.tab; return render(); }
+  if(el.dataset.undraft!=null){ S.drafts.splice(+el.dataset.undraft,1); return render(); }
+  if(el.id==='cancelDrafts'){ S.drafts=[]; return render(); }
+  if(el.id==='saveDrafts'){
+    const now=Date.now(); const ds=S.drafts; S.drafts=[];
+    ds.forEach((t,i)=>safe(backend.put(clean({...t,createdAt:now+i}))));
+    const months=new Set(ds.map(t=>t.date.slice(0,7))); if(months.size===1) S.month=[...months][0];
+    toast(ds.length===1?'Запись сохранена':'Сохранено записей: '+ds.length); return render();
+  }
+  if(el.dataset.draft!=null) return openEdit({draft:+el.dataset.draft});
+  if(el.dataset.id) return openEdit({id:el.dataset.id});
+  if(el.dataset.close){ S.editing=null; return render(); }
+  if(el.dataset.kind){ const t=currentEditTx(); const n=switchKind(readSheet(t),el.dataset.kind); if(S.editing.draft!=null) S.drafts[S.editing.draft]=n; else S.editing.pendingKind=n;
+      if(S.editing.draft==null){ const i=S.txs.findIndex(x=>x.id===n.id); if(i>=0) S.txs[i]=n; }
+      $('#sheetHost').dataset.for=''; return renderSheet(); }
+  if(el.id==='delBtn'){ if(!S.confirmDel){ S.confirmDel=true; return renderSheet(); } const id=S.editing.id; S.editing=null; safe(backend.del(id)); toast('Запись удалена'); return render(); }
+  if(el.dataset.deltype!=null){ const types=incomeTypes().slice(); types.splice(+el.dataset.deltype,1); S.settings.incomeTypes=types; safe(backend.saveSettings()); return render(); }
+});
+document.addEventListener('submit',e=>{
+  e.preventDefault(); const f=e.target;
+  if(f.id==='editForm'){
+    const t=currentEditTx(); if(!t){ S.editing=null; return render(); }
+    const n=readSheet(t); if(!(n.amount>0) && n.kind!=='adjust'){ toast('Укажите сумму больше нуля'); return; }
+    if(n.kind==='transfer' && n.from===n.to){ toast('Счета «откуда» и «куда» должны различаться'); return; }
+    const orig = S.editing.draft!=null ? t : (S.txs.find(x=>x.id===t.id)||t);
+    learn(orig,n); storeEdit(n); S.editing=null; render(); return;
+  }
+  if(f.id==='addTypeForm'){
+    const v=$('#newType').value.trim(); if(!v) return;
+    const types=incomeTypes(); if(types.some(x=>x.toLowerCase()===v.toLowerCase())){ toast('Такой вид уже есть'); return; }
+    const oi=types.indexOf('Другое'); const nt=types.slice(); nt.splice(oi>=0?oi:nt.length,0,v);
+    S.settings.incomeTypes=nt; safe(backend.saveSettings()); toast('Добавлен вид «'+v+'»'); return render();
+  }
+  if(f.dataset.acc){
+    const k=f.dataset.acc; const val=parseFloat(String($('#fix-'+k).value).replace(',','.'));
+    if(isNaN(val)){ toast('Впишите сумму'); return; }
+    const delta=Math.round((val-balances()[k])*100)/100;
+    if(!delta){ toast('Остаток уже совпадает'); return; }
+    safe(backend.put({id:uid(),kind:'adjust',account:k,amount:delta,date:ymd(today()),note:'Сверка остатка',createdAt:Date.now()}));
+    toast(ACC[k]+': остаток '+fmt(val)); return render();
+  }
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape' && S.editing){ S.editing=null; render(); }
+  if(e.key==='Enter' && e.target.id==='say' && !e.shiftKey){ e.preventDefault(); doParse(); }
+});
+
+window.__budgetParse = parsePhrase; window.__budgetDefaults = {incomeTypes:DEFAULT_IT.map(x=>x[0]),learned:{}};
+render();
+initStore();
+})();
+</script>

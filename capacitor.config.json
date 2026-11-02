@@ -1,0 +1,8 @@
+{
+  "appId": "com.dariaputilina.budgetbuddy",
+  "appName": "Бюджет",
+  "webDir": "www",
+  "android": {
+    "adjustMarginsForEdgeToEdge": "force"
+  }
+}
