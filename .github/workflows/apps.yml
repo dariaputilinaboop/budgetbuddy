@@ -47,7 +47,7 @@ jobs:
           path: budget-buddy.apk
 
   ios:
-    runs-on: macos-15
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
