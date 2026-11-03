@@ -8,7 +8,9 @@
 
 ## Установка
 
-**iPhone.** Скачайте на компьютер [budget-buddy.ipa](https://github.com/dariaputilinaboop/budgetbuddy/releases/latest/download/budget-buddy.ipa) и установите его программой [Sideloadly](https://sideloadly.io) (Windows или Mac) со своим Apple ID. С бесплатным Apple ID приложение нужно переустанавливать раз в 7 дней, записи при этом сохраняются.
+**iPhone через TestFlight.** Когда в Secrets репозитория заданы `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID` и `ASC_KEY_P8`, каждая сборка сама загружается в App Store Connect и появляется в TestFlight.
+
+**iPhone без аккаунта разработчика.** Скачайте на компьютер [budget-buddy.ipa](https://github.com/dariaputilinaboop/budgetbuddy/releases/latest/download/budget-buddy.ipa) и установите его программой [Sideloadly](https://sideloadly.io) (Windows или Mac) со своим Apple ID. С бесплатным Apple ID приложение нужно переустанавливать раз в 7 дней, записи при этом сохраняются.
 
 **Android.** Скачайте на телефоне [budget-buddy.apk](https://github.com/dariaputilinaboop/budgetbuddy/releases/latest/download/budget-buddy.apk) и откройте файл.
 

@@ -48,6 +48,8 @@ jobs:
 
   ios:
     runs-on: macos-15-intel
+    env:
+      HAS_ASC: ${{ secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' && secrets.ASC_KEY_P8 != '' && secrets.APPLE_TEAM_ID != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -68,10 +70,13 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'Микрофон нужен, чтобы записывать траты голосом.'" $PL
           /usr/libexec/PlistBuddy -c "Add :NSSpeechRecognitionUsageDescription string 'Распознавание речи превращает сказанное в записи о тратах.'" $PL
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 'Бюджет'" $PL || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 'Бюджет'" $PL
-          sed -i '' "s/MARKETING_VERSION = [^;]*;/MARKETING_VERSION = 1.0.${{ github.run_number }};/g; s/CURRENT_PROJECT_VERSION = [^;]*;/CURRENT_PROJECT_VERSION = ${{ github.run_number }};/g" ios/App/App.xcodeproj/project.pbxproj
+          /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" $PL
+          # Номер сборки должен расти с каждой загрузкой в TestFlight, в том числе при перезапуске
+          sed -i '' "s/MARKETING_VERSION = [^;]*;/MARKETING_VERSION = 1.0.${{ github.run_number }};/g; s/CURRENT_PROJECT_VERSION = [^;]*;/CURRENT_PROJECT_VERSION = ${{ github.run_number }}.${{ github.run_attempt }};/g" ios/App/App.xcodeproj/project.pbxproj
       - run: npx cap sync ios
       - name: Build unsigned app
         run: |
+          set -o pipefail
           xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tail -40
@@ -86,6 +91,59 @@ jobs:
         with:
           name: ios
           path: budget-buddy.ipa
+
+      # Загрузка в TestFlight. Работает, когда в Secrets репозитория есть
+      # APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID и ASC_KEY_P8 (текст ключа .p8).
+      - name: TestFlight is not configured
+        if: env.HAS_ASC != 'true'
+        run: echo "::notice::Секреты App Store Connect не заданы, загрузка в TestFlight пропущена."
+      - name: Archive signed app
+        if: env.HAS_ASC == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -o pipefail
+          mkdir -p ~/private_keys
+          printf '%s\n' "$ASC_KEY_P8" > ~/private_keys/AuthKey_$ASC_KEY_ID.p8
+          sed -i '' "s/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = $APPLE_TEAM_ID;/g" ios/App/App.xcodeproj/project.pbxproj
+          xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath build/App.xcarchive archive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_$ASC_KEY_ID.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" | tail -60
+          test -d build/App.xcarchive
+      - name: Upload to TestFlight
+        if: env.HAS_ASC == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -o pipefail
+          cat > ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath build/App.xcarchive \
+            -exportOptionsPlist ExportOptions.plist -exportPath build/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_$ASC_KEY_ID.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" | tail -60
+          echo "::notice::Сборка 1.0.${{ github.run_number }} отправлена в App Store Connect. В TestFlight она появится после обработки Apple."
+      - name: Remove key
+        if: always()
+        run: rm -rf ~/private_keys
 
   publish:
     needs: [android, ios]
